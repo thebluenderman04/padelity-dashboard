@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { brands } from "../../brands.config.js";
 import Sidebar from "../../components/Sidebar";
 
-type BrandConfig = { id: string; name: string };
+type BrandConfig = { name: string };
 
 export default async function BrandLayout({
   children,
