@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 
-const TOKENS_FILE = path.join(process.cwd(), "athlete-tokens.json");
+// On Vercel the project root is read-only — fall back to /tmp for local persistence
+const TOKENS_FILE = process.env.NODE_ENV === "production"
+  ? "/tmp/athlete-tokens.json"
+  : path.join(process.cwd(), "athlete-tokens.json");
 
 interface AthleteToken {
   name: string;
@@ -27,7 +30,12 @@ async function readTokensFile(): Promise<TokensFile> {
 }
 
 async function writeTokensFile(data: TokensFile) {
-  await fs.writeFile(TOKENS_FILE, JSON.stringify(data, null, 2), "utf-8");
+  try {
+    await fs.writeFile(TOKENS_FILE, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    // Log but don't crash — token is already logged to console below
+    console.error("[athlete-tokens] Failed to write file:", err);
+  }
 }
 
 /**
@@ -38,8 +46,11 @@ async function writeTokensFile(data: TokensFile) {
  *   1. Exchange code for a short-lived token
  *   2. Exchange that for a long-lived token (60-day expiry)
  *   3. Fetch the athlete's ig_user_id + username from /me
- *   4. Upsert the record in athlete-tokens.json
+ *   4. Save to athlete-tokens.json (local) / log to console (production)
  *   5. Redirect to /onboard?success=1
+ *
+ * On Vercel: check function logs for the token — add it to env vars as
+ *   IG_TOKEN_<NAME>=<token>
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
@@ -102,7 +113,7 @@ export async function GET(req: NextRequest) {
 
   const longToken: string = longTokenRes.ok
     ? ((await longTokenRes.json()) as { access_token: string }).access_token
-    : shortToken; // fall back to short-lived if exchange fails
+    : shortToken;
 
   // ── Step 3: Fetch profile ──────────────────────────────────────────────────
   const meRes = await fetch(
@@ -121,9 +132,6 @@ export async function GET(req: NextRequest) {
     name?: string;
   };
 
-  // ── Step 4: Upsert in athlete-tokens.json ─────────────────────────────────
-  const data = await readTokensFile();
-
   const entry: AthleteToken = {
     name: athleteName || me.name || me.username,
     ig_user_id: me.id,
@@ -133,18 +141,25 @@ export async function GET(req: NextRequest) {
     connected_at: new Date().toISOString(),
   };
 
-  // Replace existing entry for this ig_user_id, or append
+  // ── Step 4: Persist ────────────────────────────────────────────────────────
+  // Always log so the token is retrievable from Vercel function logs
+  console.log(
+    "[padelity-onboard] New athlete connected:\n" +
+    JSON.stringify({ name: entry.name, ig_user_id: entry.ig_user_id, username: entry.username, token: entry.token }, null, 2) +
+    "\n→ Add to Vercel env vars: IG_TOKEN_" + entry.name.toUpperCase().replace(/\s+/g, "_") + "=" + entry.token
+  );
+
+  const data = await readTokensFile();
   const idx = data.athletes.findIndex((a) => a.ig_user_id === me.id);
   if (idx >= 0) {
     data.athletes[idx] = entry;
   } else {
     data.athletes.push(entry);
   }
-
   await writeTokensFile(data);
 
   // ── Step 5: Redirect to success ───────────────────────────────────────────
   return NextResponse.redirect(
-    `${baseUrl}/onboard?success=1&username=${encodeURIComponent(me.username)}`
+    `${baseUrl}/onboard?success=1&username=${encodeURIComponent(me.username)}&uid=${encodeURIComponent(me.id)}`
   );
 }

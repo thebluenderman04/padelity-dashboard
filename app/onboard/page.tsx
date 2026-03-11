@@ -8,6 +8,7 @@ function OnboardContent() {
   const params = useSearchParams();
   const success = params.get("success") === "1";
   const username = params.get("username") ?? "";
+  const uid = params.get("uid") ?? "";
   const errorMsg = params.get("error") ?? "";
 
   const [athleteName, setAthleteName] = useState("");
@@ -50,8 +51,13 @@ function OnboardContent() {
                 @{username} connected successfully!
               </p>
               <p className="text-ink-muted text-sm">
-                Your token has been saved. The Padelity team will add your account to the dashboard.
+                Your account has been authorised. The Padelity team will add you to the dashboard shortly.
               </p>
+              {uid && (
+                <p className="text-xs text-ink-subtle font-mono bg-canvas rounded-lg px-3 py-2 break-all">
+                  ig_user_id: {uid}
+                </p>
+              )}
             </div>
           ) : (
             /* ── Connect form ── */
