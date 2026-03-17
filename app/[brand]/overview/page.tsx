@@ -1,13 +1,8 @@
-import { brands } from "../../../brands.config.js";
 import KPICard from "../../../components/KPICard";
 import EngagementChart from "../../../components/EngagementChart";
 import ContentMixDonut from "../../../components/ContentMixDonut";
-import {
-  fetchAthleteData,
-  toEngagementSeries,
-  toContentMix,
-  type AthleteConfig,
-} from "../../../lib/instagram";
+import { fetchAthleteData, toEngagementSeries, toContentMix } from "../../../lib/instagram";
+import { getAthletes } from "../../../lib/athletes";
 
 export default async function OverviewPage({
   params,
@@ -15,33 +10,56 @@ export default async function OverviewPage({
   params: Promise<{ brand: string }>;
 }) {
   const { brand: brandId } = await params;
-  const brandCfg = (brands as Record<string, { athletes: AthleteConfig[] }>)[brandId];
-  const athlete = brandCfg?.athletes[0];
+  const allAthletes = await getAthletes(brandId);
 
-  const { profile, media } = await fetchAthleteData(athlete);
+  // Fetch all athletes in parallel
+  const allData = await Promise.all(
+    allAthletes.map((cfg) => fetchAthleteData(cfg))
+  );
 
-  // Compute KPIs from real data
-  const followers = profile.followers_count;
-  const totalPosts = profile.media_count;
+  // ── Aggregated KPIs ──────────────────────────────────────────────────────
+  const totalFollowers = allData.reduce(
+    (s, d) => s + d.profile.followers_count,
+    0
+  );
+  const totalPosts = allData.reduce((s, d) => s + d.profile.media_count, 0);
+
+  // All media flattened, carrying each athlete's follower count for engagement
+  const allMediaFlat = allData.flatMap(({ profile, media }) =>
+    media.map((m) => ({ ...m, _followers: profile.followers_count }))
+  );
 
   const avgEngRate =
-    media.length > 0
-      ? media.reduce((s, m) => s + (m.like_count + m.comments_count), 0) /
-        media.length /
-        followers *
+    allMediaFlat.length > 0
+      ? (allMediaFlat.reduce(
+          (s, m) => s + (m.like_count + m.comments_count) / m._followers,
+          0
+        ) /
+          allMediaFlat.length) *
         100
       : 0;
 
   const avgLikes =
-    media.length > 0
-      ? Math.round(media.reduce((s, m) => s + m.like_count, 0) / media.length)
+    allMediaFlat.length > 0
+      ? Math.round(
+          allMediaFlat.reduce((s, m) => s + m.like_count, 0) /
+            allMediaFlat.length
+        )
       : 0;
 
-  const series = toEngagementSeries(media, followers);
-  const mix = toContentMix(media);
+  // Chart: primary athlete's engagement series; content mix from all athletes
+  const primary = allData[0];
+  const series = toEngagementSeries(
+    primary.media,
+    primary.profile.followers_count
+  );
+  const mix = toContentMix(allData.flatMap((d) => d.media));
 
-  // Whether we're showing per-post data (real) vs daily aggregate (mock)
-  const isLive = media.length > 0;
+  const isLive = allMediaFlat.length > 0;
+  const athleteLabel =
+    allAthletes.length === 1
+      ? `${primary.profile.name} (@${primary.profile.username})`
+      : `${allAthletes.length} athletes · combined`;
 
   return (
     <div>
@@ -50,14 +68,12 @@ export default async function OverviewPage({
         <h1 className="text-3xl font-display font-semibold text-ink tracking-tight">
           Overview
         </h1>
-        <p className="text-ink-muted text-sm mt-1.5">
-          {profile.name} (@{profile.username}) · all-time
-        </p>
+        <p className="text-ink-muted text-sm mt-1.5">{athleteLabel} · all-time</p>
       </div>
 
       {/* KPI grid */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-        <KPICard label="Followers" value={followers} />
+        <KPICard label="Total Followers" value={totalFollowers} />
         <KPICard
           label="Avg. Engagement Rate"
           value={+avgEngRate.toFixed(2)}
@@ -79,7 +95,7 @@ export default async function OverviewPage({
             </h2>
             <p className="text-xs text-ink-muted mt-0.5">
               {isLive
-                ? "Per post · (likes + comments) ÷ followers"
+                ? `${primary.profile.name} · per post · (likes + comments) ÷ followers`
                 : "Combined portfolio · last 30 days"}
             </p>
           </div>
@@ -99,7 +115,7 @@ export default async function OverviewPage({
         >
           <div className="mb-5">
             <h2 className="text-base font-semibold text-ink">Content Mix</h2>
-            <p className="text-xs text-ink-muted mt-0.5">By post type</p>
+            <p className="text-xs text-ink-muted mt-0.5">By post type · all athletes</p>
           </div>
           <ContentMixDonut data={mix} />
         </div>

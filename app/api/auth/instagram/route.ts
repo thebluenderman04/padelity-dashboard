@@ -22,7 +22,11 @@ export async function GET(req: NextRequest) {
   }
 
   const athleteName = req.nextUrl.searchParams.get("athlete") ?? "";
+  const brandId = req.nextUrl.searchParams.get("brand") ?? "padelity";
   const redirectUri = `${baseUrl}/api/auth/instagram/callback`;
+
+  // Encode both name and brand in state so the callback knows where to save
+  const state = `${athleteName}||${brandId}`;
 
   const params = new URLSearchParams({
     client_id: appId,
@@ -31,7 +35,7 @@ export async function GET(req: NextRequest) {
     // instagram_business_manage_insights → reach, impressions, audience demographics
     scope: "instagram_business_basic,instagram_business_manage_insights",
     response_type: "code",
-    state: athleteName, // passed back verbatim by Instagram
+    state, // parsed in callback: "name||brandId"
   });
 
   // Business API uses www.instagram.com (not api.instagram.com)

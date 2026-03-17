@@ -1,10 +1,6 @@
-import { brands } from "../../../brands.config.js";
-import PostsGrid from "../../../components/PostsGrid";
-import {
-  fetchAthleteData,
-  toTopPosts,
-  type AthleteConfig,
-} from "../../../lib/instagram";
+import PostsGridWithFilter from "../../../components/PostsGridWithFilter";
+import { fetchAthleteData, toTopPosts } from "../../../lib/instagram";
+import { getAthletes } from "../../../lib/athletes";
 
 export default async function TopPostsPage({
   params,
@@ -12,10 +8,8 @@ export default async function TopPostsPage({
   params: Promise<{ brand: string }>;
 }) {
   const { brand: brandId } = await params;
-  const brandCfg = (brands as Record<string, { athletes: AthleteConfig[] }>)[brandId];
-  const athleteConfigs: AthleteConfig[] = brandCfg?.athletes ?? [];
+  const athleteConfigs = await getAthletes(brandId);
 
-  // Fetch and transform posts for all athletes
   const allPosts = (
     await Promise.all(
       athleteConfigs.map(async (cfg) => {
@@ -40,27 +34,7 @@ export default async function TopPostsPage({
         </p>
       </div>
 
-      {/* Filter pills (labels only — sorting is live) */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        {types.map((t) => (
-          <span
-            key={t}
-            className={`text-xs px-3 py-1.5 rounded-full border select-none ${
-              t === "All"
-                ? "bg-ink text-white border-ink"
-                : "bg-surface text-ink-muted border-border"
-            }`}
-          >
-            {t}
-          </span>
-        ))}
-      </div>
-
-      <PostsGrid posts={allPosts} />
-
-      <p className="text-center text-xs text-ink-subtle mt-8">
-        Showing all {allPosts.length} posts · ranked by engagement rate
-      </p>
+      <PostsGridWithFilter posts={allPosts} types={types} />
     </div>
   );
 }

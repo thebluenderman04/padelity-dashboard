@@ -275,12 +275,153 @@ export async function fetchAthleteData(
   return { profile, media };
 }
 
-// ─── Audience (requires Business API — always mock for now) ───────────────────
+// ─── Audience (fetched from Business API, falls back to mock) ─────────────────
 
-export function getAudienceData() {
-  return {
+/** Convert ISO-3166-1 alpha-2 code → flag emoji */
+function codeToFlag(code: string): string {
+  return code
+    .toUpperCase()
+    .split("")
+    .map((c) => String.fromCodePoint(c.charCodeAt(0) + 127397))
+    .join("");
+}
+
+const COUNTRY_NAMES: Record<string, string> = {
+  US: "United States", GB: "United Kingdom", ES: "Spain", AR: "Argentina",
+  IT: "Italy", PT: "Portugal", FR: "France", MX: "Mexico", BR: "Brazil",
+  DE: "Germany", AU: "Australia", NL: "Netherlands", CA: "Canada",
+  CO: "Colombia", CL: "Chile", PE: "Peru", PL: "Poland", BE: "Belgium",
+  SE: "Sweden", CH: "Switzerland", AT: "Austria", NO: "Norway", DK: "Denmark",
+  FI: "Finland", AE: "UAE", SA: "Saudi Arabia", JP: "Japan", KR: "South Korea",
+  IN: "India", ZA: "South Africa", NZ: "New Zealand", SG: "Singapore",
+  EG: "Egypt", MA: "Morocco", RU: "Russia", TR: "Turkey", PK: "Pakistan",
+  NG: "Nigeria", TH: "Thailand", ID: "Indonesia", MY: "Malaysia",
+};
+
+export interface AudienceInsights {
+  age: import("./mock-data").AgeGroup[];
+  gender: import("./mock-data").GenderSlice[];
+  countries: import("./mock-data").CountryRow[];
+  isLive: boolean;
+}
+
+export async function fetchAudienceInsights(
+  config: AthleteConfig
+): Promise<AudienceInsights> {
+  const fallback: AudienceInsights = {
     age: audienceAge,
     gender: audienceGender,
     countries: audienceCountries,
+    isLive: false,
   };
+
+  if (isMock(config.token)) return fallback;
+
+  try {
+    const [countryRes, genderAgeRes] = await Promise.allSettled([
+      fetch(
+        `${IG_API}/me/insights?metric=audience_country&period=lifetime&access_token=${config.token}`,
+        { cache: "no-store" }
+      ),
+      fetch(
+        `${IG_API}/me/insights?metric=audience_gender_age&period=lifetime&access_token=${config.token}`,
+        { cache: "no-store" }
+      ),
+    ]);
+
+    let countries = audienceCountries;
+    let age = audienceAge;
+    let gender = audienceGender;
+    let gotAnyRealData = false;
+
+    // ── Countries ────────────────────────────────────────────────────────────
+    if (countryRes.status === "fulfilled" && countryRes.value.ok) {
+      const json = await countryRes.value.json();
+      const rawCounts: Record<string, number> =
+        json?.data?.[0]?.values?.[0]?.value ?? {};
+      const total = Object.values(rawCounts).reduce((s, v) => s + v, 0);
+
+      if (total > 0) {
+        gotAnyRealData = true;
+        const sorted = Object.entries(rawCounts)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 7);
+
+        countries = sorted.map(([code, count]) => ({
+          country: COUNTRY_NAMES[code] ?? code,
+          flag: codeToFlag(code),
+          pct: Math.round((count / total) * 100),
+        }));
+
+        const otherPct = 100 - countries.reduce((s, c) => s + c.pct, 0);
+        if (otherPct > 0) {
+          countries.push({ country: "Other", flag: "🌍", pct: otherPct });
+        }
+      }
+    }
+
+    // ── Gender + Age ──────────────────────────────────────────────────────────
+    if (genderAgeRes.status === "fulfilled" && genderAgeRes.value.ok) {
+      const json = await genderAgeRes.value.json();
+      const rawCounts: Record<string, number> =
+        json?.data?.[0]?.values?.[0]?.value ?? {};
+
+      if (Object.keys(rawCounts).length > 0) {
+        gotAnyRealData = true;
+
+        // Aggregate gender (keys like "M.25-34", "F.18-24", "U.35-44")
+        const genderTotals: Record<string, number> = { M: 0, F: 0, U: 0 };
+        const ageTotals: Record<string, number> = {};
+
+        for (const [key, count] of Object.entries(rawCounts)) {
+          const dotIdx = key.indexOf(".");
+          const gCode = dotIdx >= 0 ? key.slice(0, dotIdx) : "U";
+          const ageRange = dotIdx >= 0 ? key.slice(dotIdx + 1) : key;
+          genderTotals[gCode] = (genderTotals[gCode] ?? 0) + count;
+          ageTotals[ageRange] = (ageTotals[ageRange] ?? 0) + count;
+        }
+
+        const gTotal = Object.values(genderTotals).reduce((s, v) => s + v, 0);
+        if (gTotal > 0) {
+          gender = [
+            {
+              name: "Male",
+              value: Math.round((genderTotals.M / gTotal) * 100),
+              color: "#0a0a0a",
+            },
+            {
+              name: "Female",
+              value: Math.round((genderTotals.F / gTotal) * 100),
+              color: "#9ca3af",
+            },
+            {
+              name: "Other",
+              value: Math.round(((genderTotals.U ?? 0) / gTotal) * 100),
+              color: "#e5e7eb",
+            },
+          ].filter((g) => g.value > 0);
+        }
+
+        const aTotal = Object.values(ageTotals).reduce((s, v) => s + v, 0);
+        if (aTotal > 0) {
+          age = Object.entries(ageTotals)
+            .sort(([a], [b]) => {
+              const numA = parseInt(a.replace("+", "").split("-")[0]);
+              const numB = parseInt(b.replace("+", "").split("-")[0]);
+              return numA - numB;
+            })
+            .map(([group, count]) => ({
+              // Normalise "65+" → "65+" and "13-17" → "13–17" (en-dash)
+              group: group.replace("-", "–"),
+              pct: Math.round((count / aTotal) * 100),
+            }));
+        }
+      }
+    }
+
+    return { age, gender, countries, isLive: gotAnyRealData };
+  } catch (err) {
+    console.error("[audience] Failed to fetch insights:", err);
+    return fallback;
+  }
 }

@@ -1,63 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
-
-// On Vercel the project root is read-only — fall back to /tmp for local persistence
-const TOKENS_FILE = process.env.NODE_ENV === "production"
-  ? "/tmp/athlete-tokens.json"
-  : path.join(process.cwd(), "athlete-tokens.json");
-
-interface AthleteToken {
-  name: string;
-  ig_user_id: string;
-  username: string;
-  token: string;
-  token_type: "long_lived";
-  connected_at: string;
-}
-
-interface TokensFile {
-  athletes: AthleteToken[];
-}
-
-async function readTokensFile(): Promise<TokensFile> {
-  try {
-    const raw = await fs.readFile(TOKENS_FILE, "utf-8");
-    return JSON.parse(raw) as TokensFile;
-  } catch {
-    return { athletes: [] };
-  }
-}
-
-async function writeTokensFile(data: TokensFile) {
-  try {
-    await fs.writeFile(TOKENS_FILE, JSON.stringify(data, null, 2), "utf-8");
-  } catch (err) {
-    // Log but don't crash — token is already logged to console below
-    console.error("[athlete-tokens] Failed to write file:", err);
-  }
-}
+import { supabaseAdmin } from "../../../../../lib/supabase";
 
 /**
- * GET /api/auth/instagram/callback?code=<code>&state=<athleteName>
+ * GET /api/auth/instagram/callback?code=<code>&state=<name||brandId>
  *
  * Instagram redirects here after the athlete authorises the app.
  * Steps:
  *   1. Exchange code for a short-lived token
  *   2. Exchange that for a long-lived token (60-day expiry)
  *   3. Fetch the athlete's ig_user_id + username from /me
- *   4. Save to athlete-tokens.json (local) / log to console (production)
+ *   4. Upsert into Supabase `athletes` table
  *   5. Redirect to /onboard?success=1
- *
- * On Vercel: check function logs for the token — add it to env vars as
- *   IG_TOKEN_<NAME>=<token>
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const code = searchParams.get("code");
-  const athleteName = searchParams.get("state") ?? "Unknown";
+  const rawState = searchParams.get("state") ?? "";
   const error = searchParams.get("error");
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!;
+
+  // Parse state: "athleteName||brandId"
+  const [athleteName, brandId] = rawState.includes("||")
+    ? rawState.split("||")
+    : [rawState, "padelity"];
 
   if (error) {
     const desc = searchParams.get("error_description") ?? error;
@@ -132,31 +97,35 @@ export async function GET(req: NextRequest) {
     name?: string;
   };
 
-  const entry: AthleteToken = {
-    name: athleteName || me.name || me.username,
-    ig_user_id: me.id,
-    username: me.username,
-    token: longToken,
-    token_type: "long_lived",
-    connected_at: new Date().toISOString(),
-  };
+  const resolvedName = athleteName || me.name || me.username;
 
-  // ── Step 4: Persist ────────────────────────────────────────────────────────
-  // Always log so the token is retrievable from Vercel function logs
-  console.log(
-    "[padelity-onboard] New athlete connected:\n" +
-    JSON.stringify({ name: entry.name, ig_user_id: entry.ig_user_id, username: entry.username, token: entry.token }, null, 2) +
-    "\n→ Add to Vercel env vars: IG_TOKEN_" + entry.name.toUpperCase().replace(/\s+/g, "_") + "=" + entry.token
-  );
+  // ── Step 4: Upsert into Supabase ───────────────────────────────────────────
+  const { error: dbError } = await supabaseAdmin
+    .from("athletes")
+    .upsert(
+      {
+        brand_id: brandId,
+        name: resolvedName,
+        instagram_handle: `@${me.username}`,
+        ig_user_id: me.id,
+        token: longToken,
+        token_type: "long_lived",
+        connected_at: new Date().toISOString(),
+      },
+      { onConflict: "ig_user_id" }
+    );
 
-  const data = await readTokensFile();
-  const idx = data.athletes.findIndex((a) => a.ig_user_id === me.id);
-  if (idx >= 0) {
-    data.athletes[idx] = entry;
+  if (dbError) {
+    console.error("[padelity-onboard] Supabase upsert failed:", dbError);
+    // Don't block the success redirect — token was obtained, just log it
+    console.log(
+      `[padelity-onboard] Token for ${resolvedName} (${me.username}): ${longToken}`
+    );
   } else {
-    data.athletes.push(entry);
+    console.log(
+      `[padelity-onboard] ✓ ${resolvedName} (@${me.username}) saved to Supabase (brand: ${brandId})`
+    );
   }
-  await writeTokensFile(data);
 
   // ── Step 5: Redirect to success ───────────────────────────────────────────
   return NextResponse.redirect(

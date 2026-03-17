@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, Grid3x3, PieChart, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, Grid3x3, PieChart, Tag, LogOut } from "lucide-react";
 
 const NAV = [
-  { href: "overview",   label: "Overview",   Icon: LayoutDashboard },
-  { href: "athletes",   label: "Athletes",   Icon: Users },
-  { href: "top-posts",  label: "Top Posts",  Icon: Grid3x3 },
-  { href: "audience",   label: "Audience",   Icon: PieChart },
+  { href: "overview",     label: "Overview",     Icon: LayoutDashboard },
+  { href: "athletes",     label: "Athletes",     Icon: Users },
+  { href: "top-posts",    label: "Top Posts",    Icon: Grid3x3 },
+  { href: "brand-posts",  label: "Brand Posts",  Icon: Tag },
+  { href: "audience",     label: "Audience",     Icon: PieChart },
 ];
 
 interface Props {
@@ -50,7 +51,7 @@ export default function Sidebar({ brandId, brandName }: Props) {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-0.5">
         {NAV.map(({ href, label, Icon }) => {
-          const isActive = pathname === `/${brandId}/${href}`;
+          const isActive = pathname.startsWith(`/${brandId}/${href}`);
           return (
             <Link
               key={href}

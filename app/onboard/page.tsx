@@ -10,6 +10,7 @@ function OnboardContent() {
   const username = params.get("username") ?? "";
   const uid = params.get("uid") ?? "";
   const errorMsg = params.get("error") ?? "";
+  const brand = params.get("brand") ?? "padelity";
 
   const [athleteName, setAthleteName] = useState("");
 
@@ -51,7 +52,7 @@ function OnboardContent() {
                 @{username} connected successfully!
               </p>
               <p className="text-ink-muted text-sm">
-                Your account has been authorised. The Padelity team will add you to the dashboard shortly.
+                Your Instagram account has been connected. You&apos;ll appear on the dashboard automatically.
               </p>
               {uid && (
                 <p className="text-xs text-ink-subtle font-mono bg-canvas rounded-lg px-3 py-2 break-all">
@@ -86,7 +87,7 @@ function OnboardContent() {
               </div>
 
               <a
-                href={`/api/auth/instagram?athlete=${encodeURIComponent(athleteName)}`}
+                href={`/api/auth/instagram?athlete=${encodeURIComponent(athleteName)}&brand=${brand}`}
                 className={`flex items-center justify-center gap-2 w-full h-11 rounded-xl bg-ink text-white text-sm font-medium tracking-wide hover:bg-zinc-800 active:bg-zinc-900 transition-colors ${
                   !athleteName.trim() ? "opacity-50 pointer-events-none" : ""
                 }`}

@@ -1,10 +1,6 @@
-import { brands } from "../../../brands.config.js";
 import AthletesTable from "../../../components/AthletesTable";
-import {
-  fetchAthleteData,
-  toAthleteStats,
-  type AthleteConfig,
-} from "../../../lib/instagram";
+import { fetchAthleteData, toAthleteStats } from "../../../lib/instagram";
+import { getAthletes } from "../../../lib/athletes";
 import { fmt } from "../../../lib/utils";
 
 export default async function AthletesPage({
@@ -13,14 +9,13 @@ export default async function AthletesPage({
   params: Promise<{ brand: string }>;
 }) {
   const { brand: brandId } = await params;
-  const brandCfg = (brands as Record<string, { athletes: AthleteConfig[] }>)[brandId];
-  const athleteConfigs: AthleteConfig[] = brandCfg?.athletes ?? [];
+  const athleteConfigs = await getAthletes(brandId);
 
-  // Fetch stats for all athletes in parallel
+  // Fetch stats for all athletes in parallel, attach ig_user_id for profile links
   const athletes = await Promise.all(
     athleteConfigs.map(async (cfg) => {
       const { profile, media } = await fetchAthleteData(cfg);
-      return toAthleteStats(cfg, profile, media);
+      return { ...toAthleteStats(cfg, profile, media), ig_user_id: cfg.ig_user_id };
     })
   );
 
@@ -44,7 +39,7 @@ export default async function AthletesPage({
         className="bg-surface rounded-2xl p-6"
         style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)" }}
       >
-        <AthletesTable athletes={athletes} />
+        <AthletesTable athletes={athletes} brandId={brandId} />
       </div>
 
       {/* Summary strip */}
