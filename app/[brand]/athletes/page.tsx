@@ -14,7 +14,10 @@ export default async function AthletesPage({
   // Fetch stats for all athletes in parallel, attach ig_user_id for profile links
   const athletes = await Promise.all(
     athleteConfigs.map(async (cfg) => {
-      const { profile, media } = await fetchAthleteData(cfg);
+      const { profile, media } = await fetchAthleteData(cfg).catch(() => ({
+        profile: { id: cfg.id, name: cfg.name, username: cfg.instagram_handle.replace("@", ""), followers_count: 0, media_count: 0 },
+        media: [] as import("../../../lib/instagram").IGMedia[],
+      }));
       return { ...toAthleteStats(cfg, profile, media), ig_user_id: cfg.ig_user_id };
     })
   );

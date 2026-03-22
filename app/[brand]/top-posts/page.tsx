@@ -13,7 +13,10 @@ export default async function TopPostsPage({
   const allPosts = (
     await Promise.all(
       athleteConfigs.map(async (cfg) => {
-        const { profile, media } = await fetchAthleteData(cfg);
+        const { profile, media } = await fetchAthleteData(cfg).catch(() => ({
+          profile: { id: cfg.id, name: cfg.name, username: cfg.instagram_handle.replace("@", ""), followers_count: 0, media_count: 0 },
+          media: [] as import("../../../lib/instagram").IGMedia[],
+        }));
         return toTopPosts(cfg, media, profile.followers_count);
       })
     )

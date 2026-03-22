@@ -24,7 +24,10 @@ export default async function BrandPostsPage({
     );
   }
 
-  const { media } = await fetchAthleteData(cfg);
+  const { media } = await fetchAthleteData(cfg).catch(() => ({
+    profile: { id: cfg.id, name: cfg.name, username: cfg.instagram_handle.replace("@", ""), followers_count: 0, media_count: 0 },
+    media: [] as import("../../../lib/instagram").IGMedia[],
+  }));
 
   let existingTags: Array<{ id: string; ig_post_id: string; brand_tag: string; deal_value?: number }> = [];
   try {
