@@ -57,7 +57,7 @@ export interface AthleteConfig {
 const IG_API = "https://graph.instagram.com/v19.0";
 
 function isMock(token: string): boolean {
-  return !token || token === "mock";
+  return !token || token.trim() === "mock";
 }
 
 // ─── Core fetch functions ─────────────────────────────────────────────────────
