@@ -1,6 +1,9 @@
 import KPICard from "../../../components/KPICard";
 import EngagementChart from "../../../components/EngagementChart";
 import ContentMixDonut from "../../../components/ContentMixDonut";
+import SponsorshipValuationCard from "../../../components/SponsorshipValuationCard";
+import EMVCard from "../../../components/EMVCard";
+import BenchmarkCard from "../../../components/BenchmarkCard";
 import { fetchAthleteData, toEngagementSeries, toContentMix } from "../../../lib/instagram";
 import { getAthletes } from "../../../lib/athletes";
 
@@ -67,6 +70,12 @@ export default async function OverviewPage({
   );
   const mix = toContentMix(allData.flatMap((d) => d.media));
 
+  // Estimated impressions: (likes + comments) × 8.5 per post
+  const estimatedImpressions = allMediaFlat.reduce(
+    (s, m) => s + (m.like_count + m.comments_count) * 8.5,
+    0
+  );
+
   const isLive = allMediaFlat.length > 0;
   const athleteLabel =
     allAthletes.length === 1
@@ -93,6 +102,16 @@ export default async function OverviewPage({
         />
         <KPICard label="Total Posts" value={totalPosts} />
         <KPICard label="Avg. Likes / Post" value={avgLikes} />
+      </div>
+
+      {/* Commercial cards row */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
+        <SponsorshipValuationCard
+          followers={totalFollowers}
+          engagementRate={+avgEngRate.toFixed(2)}
+        />
+        <EMVCard estimatedImpressions={Math.round(estimatedImpressions)} />
+        <BenchmarkCard engagementRate={+avgEngRate.toFixed(2)} />
       </div>
 
       {/* Charts row */}

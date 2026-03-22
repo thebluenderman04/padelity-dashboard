@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { SignJWT } from "jose";
 import { supabaseAdmin } from "../../../../../lib/supabase";
+
+const getSecret = () =>
+  new TextEncoder().encode(
+    process.env.JWT_SECRET || "padelity-dev-secret-change-in-production"
+  );
 
 /**
  * GET /api/auth/instagram/callback?code=<code>&state=<name||brandId>
@@ -127,8 +133,23 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // ── Step 5: Redirect to success ───────────────────────────────────────────
-  return NextResponse.redirect(
-    `${baseUrl}/onboard?success=1&username=${encodeURIComponent(me.username)}&uid=${encodeURIComponent(me.id)}`
-  );
+  // ── Step 5: Issue athlete session cookie + redirect to personal dashboard ──
+  const athleteJwt = await new SignJWT({
+    igUserId: me.id,
+    name: resolvedName,
+    username: me.username,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime("60d")
+    .sign(getSecret());
+
+  const res = NextResponse.redirect(`${baseUrl}/me/overview`);
+  res.cookies.set("athlete_session", athleteJwt, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 60, // 60 days
+    path: "/",
+  });
+  return res;
 }

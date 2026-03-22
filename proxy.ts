@@ -13,12 +13,28 @@ const PUBLIC_SEGMENTS = new Set(["_next", "api", "favicon.ico", "onboard", ""]);
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Extract the first path segment  (e.g. "padelity" from "/padelity/overview")
   const firstSegment = pathname.split("/")[1] ?? "";
 
-  // Skip non-brand routes
+  // Skip public routes
   if (PUBLIC_SEGMENTS.has(firstSegment)) return NextResponse.next();
 
+  // ── Athlete self-serve portal (/me/*) ──────────────────────────────────────
+  if (firstSegment === "me") {
+    const athleteToken = request.cookies.get("athlete_session")?.value;
+    if (!athleteToken) {
+      return NextResponse.redirect(new URL("/onboard", request.url));
+    }
+    try {
+      await jwtVerify(athleteToken, getSecret());
+      return NextResponse.next();
+    } catch {
+      const res = NextResponse.redirect(new URL("/onboard", request.url));
+      res.cookies.delete("athlete_session");
+      return res;
+    }
+  }
+
+  // ── Brand dashboard (/[brand]/*) ───────────────────────────────────────────
   const token = request.cookies.get("session")?.value;
   if (!token) {
     return NextResponse.redirect(new URL("/", request.url));

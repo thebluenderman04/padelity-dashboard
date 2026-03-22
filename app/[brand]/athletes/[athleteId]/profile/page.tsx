@@ -5,6 +5,7 @@ import { getAthletes } from "../../../../../lib/athletes";
 import { fetchAthleteData, toAthleteStats } from "../../../../../lib/instagram";
 import { supabaseAdmin } from "../../../../../lib/supabase";
 import CommercialProfilePanel from "../../../../../components/CommercialProfilePanel";
+import ExportProfileButton from "../../../../../components/ExportProfileButton";
 import { fmt, fmtPct } from "../../../../../lib/utils";
 import type { CommercialProfileResult } from "../../../../../lib/commercial-profile";
 
@@ -23,6 +24,27 @@ const cfg = athletes.find((a) => a.ig_user_id === igUserId);
   // Fetch Instagram data
   const { profile, media } = await fetchAthleteData(cfg);
   const stats = toAthleteStats(cfg, profile, media);
+
+  // Top 3 posts by engagement rate for PDF export
+  const topPosts = [...media]
+    .map((m) => ({
+      rank: 0,
+      likes: m.like_count,
+      comments: m.comments_count,
+      engRate: profile.followers_count > 0
+        ? ((m.like_count + m.comments_count) / profile.followers_count) * 100
+        : 0,
+      type: m.media_type,
+      date: m.timestamp?.slice(0, 10) ?? "",
+    }))
+    .sort((a, b) => b.engRate - a.engRate)
+    .slice(0, 3)
+    .map((p, i) => ({ ...p, rank: i + 1 }));
+
+  const estimatedImpressions = media.reduce(
+    (s, m) => s + (m.like_count + m.comments_count) * 8.5,
+    0
+  );
 
   const liveStats = {
     followers: profile.followers_count,
@@ -110,10 +132,22 @@ const cfg = athletes.find((a) => a.ig_user_id === igUserId);
 
         {/* Identity */}
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-display font-semibold text-ink tracking-tight truncate">
-            {stats.name}
-          </h1>
-          <p className="text-sm text-ink-muted mt-0.5">{stats.displayUsername}</p>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <h1 className="text-2xl font-display font-semibold text-ink tracking-tight truncate">
+                {stats.name}
+              </h1>
+              <p className="text-sm text-ink-muted mt-0.5">{stats.displayUsername}</p>
+            </div>
+            <ExportProfileButton
+              athleteName={stats.name}
+              handle={stats.displayUsername.replace("@", "")}
+              followers={profile.followers_count}
+              engagementRate={stats.engagementRate}
+              estimatedImpressions={Math.round(estimatedImpressions)}
+              topPosts={topPosts}
+            />
+          </div>
           <div className="flex items-center flex-wrap gap-3 mt-2.5">
             <span className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
               <Trophy size={12} strokeWidth={2} />
