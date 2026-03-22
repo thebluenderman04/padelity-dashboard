@@ -12,9 +12,21 @@ export default async function OverviewPage({
   const { brand: brandId } = await params;
   const allAthletes = await getAthletes(brandId);
 
-  // Fetch all athletes in parallel
+  // Fetch all athletes in parallel — catch per-athlete errors so one bad token
+  // doesn't crash the whole page; failed athletes fall back to empty mock data.
   const allData = await Promise.all(
-    allAthletes.map((cfg) => fetchAthleteData(cfg))
+    allAthletes.map((cfg) =>
+      fetchAthleteData(cfg).catch(() => ({
+        profile: {
+          id: cfg.id,
+          name: cfg.name,
+          username: cfg.instagram_handle.replace("@", ""),
+          followers_count: 0,
+          media_count: 0,
+        },
+        media: [] as import("../../../lib/instagram").IGMedia[],
+      }))
+    )
   );
 
   // ── Aggregated KPIs ──────────────────────────────────────────────────────
